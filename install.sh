@@ -4,24 +4,26 @@
 # =============================================================================
 #
 # Downloads and installs Casso Hawk on Linux/WSL2.
+# Requires a beta access token (see README for how to request access).
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/casso-ai/casso-hawk/main/install.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/CASSO-ai/casso-hawk/main/install.sh | bash -s -- --token YOUR_TOKEN
 #
 #   # Install specific version:
-#   curl -sSL .../install.sh | bash -s -- --version 0.1.0
+#   curl -sSL .../install.sh | bash -s -- --token YOUR_TOKEN --version 0.1.0
 #
 #   # Install pre-release (for UAT testers):
-#   curl -sSL .../install.sh | bash -s -- --pre
+#   curl -sSL .../install.sh | bash -s -- --token YOUR_TOKEN --pre
 #
 # =============================================================================
 
 set -euo pipefail
 
 # Configuration
-REPO="casso-ai/casso-hawk"
+REPO="CASSO-ai/casso-hawk"
 INSTALL_DIR="$HOME/.local/bin"
 PLATFORM="linux-x64"
+TOKEN_HASH_URL="https://raw.githubusercontent.com/$REPO/main/.beta-tokens"
 
 # Colors
 RED='\033[0;31m'
@@ -35,6 +37,7 @@ NC='\033[0m'
 VERSION=""
 PRE_RELEASE=false
 SKIP_FUSE=false
+ACCESS_TOKEN=""
 
 # =============================================================================
 # Argument parsing
@@ -42,6 +45,10 @@ SKIP_FUSE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --token)
+            ACCESS_TOKEN="$2"
+            shift 2
+            ;;
         --version)
             VERSION="$2"
             shift 2
@@ -57,13 +64,16 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Casso Hawk Installer"
             echo ""
-            echo "Usage: curl -sSL .../install.sh | bash [-s -- OPTIONS]"
+            echo "Usage: curl -sSL .../install.sh | bash -s -- --token YOUR_TOKEN [OPTIONS]"
             echo ""
             echo "Options:"
+            echo "  --token TOKEN     Beta access token (required)"
             echo "  --version X.Y.Z   Install specific version"
             echo "  --pre             Include pre-release versions"
             echo "  --skip-fuse       Skip FUSE prerequisite installation"
             echo "  -h, --help        Show this help"
+            echo ""
+            echo "Request beta access: https://github.com/$REPO/issues/new?title=Beta+Access+Request"
             exit 0
             ;;
         *)
@@ -82,6 +92,50 @@ success() { echo -e "${GREEN}::${NC} $1"; }
 warn()    { echo -e "${YELLOW}::${NC} $1"; }
 error()   { echo -e "${RED}:: ERROR:${NC} $1" >&2; }
 fatal()   { error "$1"; exit 1; }
+
+# =============================================================================
+# Beta access validation
+# =============================================================================
+
+validate_token() {
+    if [ -z "$ACCESS_TOKEN" ]; then
+        echo ""
+        echo -e "${BOLD}Casso Hawk is in closed beta.${NC}"
+        echo ""
+        echo "An access token is required to install."
+        echo ""
+        echo "  To request access:"
+        echo "    https://github.com/$REPO/issues/new?title=Beta+Access+Request"
+        echo ""
+        echo "  Once approved, install with:"
+        echo "    curl -sSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash -s -- --token YOUR_TOKEN"
+        echo ""
+        exit 1
+    fi
+
+    # Hash the token and check against published hash list
+    local token_hash
+    token_hash=$(echo -n "$ACCESS_TOKEN" | sha256sum | cut -d' ' -f1)
+
+    info "Validating access token..."
+
+    local hash_list
+    hash_list=$(curl -sSL "$TOKEN_HASH_URL" 2>/dev/null) || {
+        fatal "Could not fetch token validation data. Check your internet connection."
+    }
+
+    if ! echo "$hash_list" | grep -q "^${token_hash}$"; then
+        echo ""
+        error "Invalid access token."
+        echo ""
+        echo "  If you believe this is an error, contact us:"
+        echo "    https://github.com/$REPO/issues"
+        echo ""
+        exit 1
+    fi
+
+    success "Access token validated"
+}
 
 # =============================================================================
 # Platform detection
@@ -141,7 +195,6 @@ detect_package_manager() {
 # =============================================================================
 
 check_fuse_installed() {
-    # Check if fuse3 or fuse is available
     if command -v fusermount3 &>/dev/null; then
         return 0
     elif command -v fusermount &>/dev/null; then
@@ -233,7 +286,6 @@ enable_user_allow_other() {
     echo ""
 
     if ! sudo sed -i 's/^#user_allow_other/user_allow_other/' /etc/fuse.conf 2>/dev/null; then
-        # If file doesn't exist or sed fails, try creating/appending
         if ! echo "user_allow_other" | sudo tee -a /etc/fuse.conf >/dev/null 2>&1; then
             echo ""
             error "Could not update /etc/fuse.conf"
@@ -255,14 +307,12 @@ setup_fuse() {
         return
     fi
 
-    # Check if FUSE is installed
     if check_fuse_installed; then
         success "FUSE already installed"
     else
         install_fuse
     fi
 
-    # Check user_allow_other
     if check_user_allow_other; then
         success "user_allow_other already enabled"
     else
@@ -278,10 +328,8 @@ get_latest_version() {
     local api_url="https://api.github.com/repos/$REPO/releases"
 
     if [ "$PRE_RELEASE" = true ]; then
-        # Get latest release including pre-releases
         api_url="${api_url}?per_page=1"
     else
-        # Get latest stable release
         api_url="${api_url}/latest"
     fi
 
@@ -289,12 +337,7 @@ get_latest_version() {
     response=$(curl -sSL "$api_url" 2>/dev/null) || fatal "Could not reach GitHub API. Check your internet connection."
 
     local tag
-    if [ "$PRE_RELEASE" = true ]; then
-        # Response is an array, get first item's tag_name
-        tag=$(echo "$response" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\(v[^"]*\)".*/\1/')
-    else
-        tag=$(echo "$response" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\(v[^"]*\)".*/\1/')
-    fi
+    tag=$(echo "$response" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\(v[^"]*\)".*/\1/')
 
     if [ -z "$tag" ]; then
         fatal "No releases found at https://github.com/$REPO/releases"
@@ -315,19 +358,16 @@ download_and_install() {
     local tmp_dir
     tmp_dir=$(mktemp -d)
 
-    # Download tarball
     if ! curl -sSL -o "$tmp_dir/$tarball_name" "$download_url"; then
         rm -rf "$tmp_dir"
         fatal "Download failed. URL: $download_url"
     fi
 
-    # Download checksum
     if ! curl -sSL -o "$tmp_dir/$checksum_name" "$checksum_url"; then
         rm -rf "$tmp_dir"
         fatal "Checksum download failed. URL: $checksum_url"
     fi
 
-    # Verify checksum
     info "Verifying checksum..."
     if ! (cd "$tmp_dir" && sha256sum -c "$checksum_name" --quiet); then
         rm -rf "$tmp_dir"
@@ -335,11 +375,9 @@ download_and_install() {
     fi
     success "Checksum verified"
 
-    # Extract
     info "Extracting..."
     tar -xzf "$tmp_dir/$tarball_name" -C "$tmp_dir"
 
-    # Install
     mkdir -p "$INSTALL_DIR"
 
     cp "$tmp_dir/casso-hawk" "$INSTALL_DIR/casso-hawk"
@@ -358,7 +396,6 @@ download_and_install() {
 # =============================================================================
 
 ensure_path() {
-    # Check if INSTALL_DIR is in PATH
     if echo "$PATH" | grep -q "$INSTALL_DIR"; then
         return
     fi
@@ -375,7 +412,6 @@ ensure_path() {
         *)    profile_file="$HOME/.bashrc" ;;
     esac
 
-    # Check if already in profile
     if grep -q "$INSTALL_DIR" "$profile_file" 2>/dev/null; then
         return
     fi
@@ -406,7 +442,6 @@ check_existing_install() {
         return 0
     fi
 
-    # Also check ~/.cargo/bin (previous install location)
     existing_bin="$HOME/.cargo/bin/casso-hawk"
     if [ -x "$existing_bin" ]; then
         local current_version
@@ -432,6 +467,9 @@ main() {
     if ! command -v curl &>/dev/null; then
         fatal "curl is required but not installed. Install it with: sudo apt install curl"
     fi
+
+    # Validate beta access token
+    validate_token
 
     # Detect platform
     detect_platform
@@ -471,7 +509,6 @@ main() {
     if "$INSTALL_DIR/casso-hawk" setup --quiet 2>/dev/null; then
         success "Setup complete"
     else
-        # Setup might fail if shell can't be detected in pipe context
         warn "Auto-setup skipped. Run manually after installation:"
         echo "  casso hawk setup"
     fi
