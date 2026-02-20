@@ -6,6 +6,16 @@
 
 Casso Hawk is a local versioning engine and coordination layer for AI-assisted development. It captures every file change automatically — no git commits required — and coordinates multiple AI agents working on the same codebase so they never overwrite each other's work.
 
+## Install Once. Never Think About It Again.
+
+Casso Hawk is **completely automatic**. After a one-time `casso hawk protect`, there is nothing to remember, nothing to configure, and nothing to run. It works in two modes — both fully hands-off:
+
+**AI mode** — Completely automatic. Your AI agents open and close snapshots as needed to make changes, commit to git, and push to the remote. No new commands to learn, no configuration to maintain. The AI does everything for you. Not because it wants to — because it has to.
+
+**Human mode** — You code normally, using git the way you always have. Casso Hawk captures every edit in the background as you work. When you `git commit`, Casso Hawk automatically closes the current snapshot and opens a new one. Your entire editing history between commits is preserved — every save, every undo, every experiment. If you need to recover something you changed before committing, it's there.
+
+In both modes: **zero commands to run, zero habits to change, zero maintenance.**
+
 ## The Problem
 
 AI agents move fast. They edit dozens of files in minutes, and when things go wrong — a bad refactor, a deleted function, a broken build — the damage is done before you notice.
@@ -34,7 +44,7 @@ Casso Hawk solves both problems at once.
 
 ## Coming Soon
 
-- **Non-AI auto mode** — Even without AI agents, every edit is captured automatically. A "black box recorder" for all file operations. *(In development)*
+- **Human mode** — Full automatic protection without AI agents. Every edit captured as you code, snapshots sync with your git commits. A "black box recorder" for your entire editing history. *(In development)*
 - **Web dashboard** — Monitor agent activity, snapshot history, and project status through a local web UI. *(In development)*
 - **macOS support** — Native macFUSE integration. *(Planned)*
 - **Windows support** — WinFsp integration. *(Planned)*
